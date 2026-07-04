@@ -1,0 +1,90 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: opspaw-mysql
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-opspaw}
+      MYSQL_USER: ${MYSQL_USER:-opspaw}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-opspaw}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-opspaw-root}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+      - --max-connections=500
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: opspaw-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: opspaw/inference-env-platform:latest
+    container_name: opspaw-api
+    env_file:
+      - .env
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://opspaw:opspaw@mysql:3306/opspaw?charset=utf8mb4}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DELIVERY_BUNDLE_ARTIFACT_ROOT: /data/delivery-bundles
+      MCP_ALLOWED_PACKAGE_ROOTS: /data/env-packages,/mnt/env-packages,/nas/inference-packages
+    volumes:
+      - env_packages:/data/env-packages
+      - delivery_bundles:/data/delivery-bundles
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "18080:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    image: opspaw/inference-env-platform-nginx:latest
+    container_name: opspaw-nginx
+    ports:
+      - "18081:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+  env_packages:
+  delivery_bundles:

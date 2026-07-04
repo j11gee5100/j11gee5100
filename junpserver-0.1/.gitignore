@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime
+.env
+*.log
+data/env-packages/
+
+# Editors
+.vscode/
+.idea/
