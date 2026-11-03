@@ -1,2 +1,0 @@
-"""OpsPaw application package."""
-
